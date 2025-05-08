@@ -36,7 +36,19 @@ def backup_folder(folder_name):
         shutil.copytree(src_path, dest_path)
         log_event(f"Backed up folder: {folder_name}")
     else:
-        log_event(f"Folder already backed up: {folder_name}")
+        # Compare files in source and destination
+        for root, _, files in os.walk(src_path):
+            for file in files:
+                src_file = os.path.join(root, file)
+                relative_path = os.path.relpath(src_file, src_path)
+                dest_file = os.path.join(dest_path, relative_path)
+
+                # Check if the file is missing or outdated in the destination
+                if not os.path.exists(dest_file) or os.path.getmtime(src_file) > os.path.getmtime(dest_file):
+                    dest_folder = os.path.dirname(dest_file)
+                    os.makedirs(dest_folder, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+                    log_event(f"Updated file: {relative_path} in folder: {folder_name}")
 
 def monitor_directory():
     """Monitor the source directory for changes."""
@@ -53,18 +65,24 @@ def monitor_directory():
             folder_path = os.path.join(SOURCE_DIR, folder_name)
 
             if os.path.isdir(folder_path):
-                # Get the last modified time of the folder
-                modified_time = os.path.getmtime(folder_path)
+                # Track changes to files inside the folder
+                folder_files = [
+                    os.path.join(folder_path, f) for f in os.listdir(folder_path)
+                ]
+                folder_modified_time = max(
+                    (os.path.getmtime(f) for f in folder_files if os.path.isfile(f)),
+                    default=os.path.getmtime(folder_path),
+                )
 
-                # Check if the folder is empty or has been modified
-                if folder_name not in last_modified or last_modified[folder_name] != modified_time:
-                    last_modified[folder_name] = modified_time
+                # Check if the folder or its contents have been modified
+                if folder_name not in last_modified or last_modified[folder_name] != folder_modified_time:
+                    last_modified[folder_name] = folder_modified_time
 
                     if not is_folder_empty(folder_path):
                         backup_folder(folder_name)
 
         # Check if monitoring has been stopped during sleep
-        for _ in range(120):  # Sleep for 120 seconds in 1-second intervals
+        for _ in range(60):  # Sleep for 120 seconds in 1-second intervals
             if not monitoring:
                 return
             time.sleep(1)
