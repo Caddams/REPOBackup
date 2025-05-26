@@ -1,8 +1,8 @@
-# File: backup-program/src/Main.py
 import os
 import shutil
 import time
 import threading
+import hashlib
 from tkinter import Tk, Button, Label, Text, Scrollbar, filedialog, END, Toplevel
 import tkinter.messagebox as messagebox 
 
@@ -27,63 +27,117 @@ def is_folder_empty(folder_path):
     """Check if a folder is empty."""
     return not any(os.scandir(folder_path))
 
+def calculate_file_hash(file_path):
+    """Calculate the SHA256 hash of a file."""
+    log_event(f"Calculating hash for file: {file_path}")
+    hash_sha256 = hashlib.sha256()
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+        log_event(f"Hash calculated for file: {file_path}")
+    except Exception as e:
+        log_event(f"Error calculating hash for file: {file_path}. Exception: {e}")
+    return hash_sha256.hexdigest()
+
 def backup_folder(folder_name):
-    """Backup a folder to the destination directory."""
+    """Backup a folder to the destination directory, overwriting by default and copying missing files."""
+    log_event(f"--- backup_folder CALLED for: {folder_name} ---")
     src_path = os.path.join(SOURCE_DIR, folder_name)
     dest_path = os.path.join(DEST_DIR, folder_name)
 
+    log_event(f"Starting backup for folder: {folder_name}")
+    log_event(f"Source path: {src_path}")
+    log_event(f"Destination path: {dest_path}")
+
+    # Ensure the destination folder exists
     if not os.path.exists(dest_path):
-        shutil.copytree(src_path, dest_path)
-        log_event(f"Backed up folder: {folder_name}")
-    else:
-        # Compare files in source and destination
-        for root, _, files in os.walk(src_path):
-            for file in files:
-                src_file = os.path.join(root, file)
-                relative_path = os.path.relpath(src_file, src_path)
-                dest_file = os.path.join(dest_path, relative_path)
+        os.makedirs(dest_path)
+        log_event(f"Created destination folder: {dest_path}")
 
-                # Check if the file is missing or outdated in the destination
-                if not os.path.exists(dest_file) or os.path.getmtime(src_file) > os.path.getmtime(dest_file):
-                    dest_folder = os.path.dirname(dest_file)
-                    os.makedirs(dest_folder, exist_ok=True)
-                    shutil.copy2(src_file, dest_file)
-                    log_event(f"Updated file: {relative_path} in folder: {folder_name}")
+    # Copy all files from the source to the destination, overwriting if necessary
+    for root, _, files in os.walk(src_path):
+        log_event(f"Processing directory: {root}")
+        for file in files:
+            src_file = os.path.join(root, file)
+            relative_path = os.path.relpath(src_file, src_path)
+            dest_file = os.path.join(dest_path, relative_path)
 
+            log_event(f"Processing file: {relative_path}")
+            dest_folder = os.path.dirname(dest_file)
+            os.makedirs(dest_folder, exist_ok=True)  # Ensure the destination folder exists
+
+            # Copy if missing or if source is newer
+            try:
+                shutil.copy2(src_file, dest_file)
+                log_event(f"Copied file: {relative_path} to destination.")
+            except Exception as e:
+                log_event(f"Error copying file: {relative_path}. Exception: {e}")
+                
+            else:
+                log_event(f"File up to date: {relative_path}")
+
+def get_latest_mtime(folder_path):
+    """Return the latest modification time of any file in the folder (recursively)."""
+    latest = os.path.getmtime(folder_path)
+    for root, _, files in os.walk(folder_path):
+        for f in files:
+            fp = os.path.join(root, f)
+            try:
+                mtime = os.path.getmtime(fp)
+                if mtime > latest:
+                    latest = mtime
+            except Exception:
+                pass
+    return latest
+                
 def monitor_directory():
     """Monitor the source directory for changes."""
     global monitoring
-    last_modified = {}
 
+    log_event("Monitoring started.")
     if not DEST_DIR:  # Ensure DEST_DIR is set before monitoring
         log_event("Error: No destination directory selected. Monitoring stopped.")
         monitoring = False
         return
 
+    last_modified = {}  # Track last modified times
+    last_file_set = {}  # Track file sets
+
     while monitoring:
+        log_event("Checking source directory for changes...")
         for folder_name in os.listdir(SOURCE_DIR):
             folder_path = os.path.join(SOURCE_DIR, folder_name)
 
             if os.path.isdir(folder_path):
-                # Track changes to files inside the folder
-                folder_files = [
-                    os.path.join(folder_path, f) for f in os.listdir(folder_path)
-                ]
-                folder_modified_time = max(
-                    (os.path.getmtime(f) for f in folder_files if os.path.isfile(f)),
-                    default=os.path.getmtime(folder_path),
-                )
+                # Get set of files in source
+                src_files = set()
+                for root, _, files in os.walk(folder_path):
+                    for f in files:
+                        src_files.add(os.path.relpath(os.path.join(root, f), folder_path))
 
-                # Check if the folder or its contents have been modified
-                if folder_name not in last_modified or last_modified[folder_name] != folder_modified_time:
-                    last_modified[folder_name] = folder_modified_time
+                # Get set of files in destination
+                dest_folder_path = os.path.join(DEST_DIR, folder_name)
+                dest_files = set()
+                if os.path.exists(dest_folder_path):
+                    for root, _, files in os.walk(dest_folder_path):
+                        for f in files:
+                            dest_files.add(os.path.relpath(os.path.join(root, f), dest_folder_path))
 
-                    if not is_folder_empty(folder_path):
-                        backup_folder(folder_name)
+                if src_files != dest_files:
+                    log_event(f"Folder {folder_name} has different files in source and destination. Starting backup.")
+                    backup_folder(folder_name)
+                elif not is_folder_empty(folder_path):
+                    log_event(f"Folder {folder_name} already backed up: files match.")
+                else:
+                    log_event(f"Folder {folder_name} is empty. Skipping.")
+            else:
+                log_event(f"Skipping non-folder item: {folder_name}")
 
-        # Check if monitoring has been stopped during sleep
-        for _ in range(60):  # Sleep for 120 seconds in 1-second intervals
+        # Sleep loop
+        for _ in range(30):
             if not monitoring:
+                log_event("Monitoring stopped.")
                 return
             time.sleep(1)
 
