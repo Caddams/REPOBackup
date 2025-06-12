@@ -4,7 +4,7 @@ import time
 import threading
 import hashlib
 from tkinter import Tk, Button, Label, Text, Scrollbar, filedialog, END, Toplevel
-import tkinter.messagebox as messagebox 
+import tkinter.messagebox as messagebox
 
 # Source and destination directories
 SOURCE_DIR = os.path.join(os.getenv("USERPROFILE"), "AppData", "LocalLow", "semiwork", "Repo", "saves")
@@ -16,11 +16,21 @@ monitoring_thread = None
 DEST_DIR = None
 
 def log_event(message):
-    """Log events to a file and print to console."""
+    """Log events to a file and print to console. Keeps only the last 100 lines."""
     if DEST_DIR:  # Ensure the destination directory is set before logging
-        log_path = os.path.join(DEST_DIR, LOG_FILE)  # Create log file in DEST_DIR
+        log_path = os.path.join(DEST_DIR, LOG_FILE)
+        # Write the new log entry
         with open(log_path, "a") as log:
             log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+        # Trim the log file to the last 100 lines
+        try:
+            with open(log_path, "r") as log:
+                lines = log.readlines()
+            if len(lines) > 100:
+                with open(log_path, "w") as log:
+                    log.writelines(lines[-100:])
+        except Exception as e:
+            print(f"Error trimming log file: {e}")
     print(message)
 
 def is_folder_empty(folder_path):
@@ -198,6 +208,7 @@ def show_logs():
     if os.path.exists(log_path):
         with open(log_path, "r") as log:
             text.insert(END, log.read())
+        text.see(END)
     else:
         text.insert(END, "No logs available.")
 
@@ -209,7 +220,7 @@ def update_status_label(status_label):
         status_label.config(text="REPO Monitor is not running", fg="red")
 
 def restore_backup():
-    """Restore the backup from the destination directory to the source directory."""
+    """Restore the backup from the destination directory to the source directory, without deleting anything in the source."""
     if not DEST_DIR:
         messagebox.showerror("Error", "No destination directory selected. Cannot restore backup.")
         return
@@ -221,9 +232,6 @@ def restore_backup():
     if not os.path.exists(SOURCE_DIR):
         os.makedirs(SOURCE_DIR)  # Create the source directory if it doesn't exist
 
-    # Check if the source directory is empty
-    source_is_empty = not any(os.scandir(SOURCE_DIR))
-
     for folder_name in os.listdir(DEST_DIR):
         # Skip the log file during restoration
         if folder_name == LOG_FILE:
@@ -234,33 +242,42 @@ def restore_backup():
         dest_path = os.path.join(DEST_DIR, folder_name)
 
         if os.path.isdir(dest_path):
-            if os.path.exists(src_path) and not source_is_empty:
+            warn_user = False
+            if os.path.exists(src_path):
                 # Compare modified dates
                 source_modified = os.path.getmtime(src_path)
                 dest_modified = os.path.getmtime(dest_path)
-
                 if dest_modified < source_modified:
-                    # Warn the user if the destination files are older
-                    response = messagebox.askyesno(
-                        "Warning",
-                        f"The backup folder '{folder_name}' is older than the source folder. "
-                        "Do you want to overwrite the source folder with the backup?"
-                    )
-                    if not response:
-                        continue  # Skip restoring this folder
+                    warn_user = True
 
-            # Copy the folder from the destination to the source
+            if warn_user:
+                response = messagebox.askyesno(
+                    "Warning",
+                    f"The backup folder '{folder_name}' is older than the source folder. "
+                    "Do you want to overwrite the source folder with the backup?"
+                )
+                if not response:
+                    continue  # Skip restoring this folder
+
+            # Copy files/folders from backup to source, only overwrite or add, never delete
             try:
-                if os.path.exists(src_path):
-                    shutil.rmtree(src_path)  # Remove the existing source folder
-                shutil.copytree(dest_path, src_path)
-                log_event(f"Restored folder: {folder_name}")
-            except PermissionError:
+                for root, dirs, files in os.walk(dest_path):
+                    rel_root = os.path.relpath(root, dest_path)
+                    target_root = os.path.join(src_path, rel_root) if rel_root != "." else src_path
+                    os.makedirs(target_root, exist_ok=True)
+                    for file in files:
+                        src_file = os.path.join(target_root, file)
+                        dest_file = os.path.join(root, file)
+                        shutil.copy2(dest_file, src_file)
+                log_event(f"Restored (merged/overwritten) folder: {folder_name}")
+            except PermissionError as e:
                 messagebox.showerror(
                     "Permission Denied",
                     f"Access denied while trying to modify '{src_path}'.\n"
+                    f"Error: {e}\n"
                     "Please relaunch the program as an administrator and try again."
                 )
+                log_event(f"PermissionError while restoring '{src_path}': {e}")
                 return  # Exit the function if a permission error occurs
         else:
             log_event(f"Skipped non-folder item in backup: {folder_name}")
