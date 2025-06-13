@@ -9,8 +9,7 @@ This project is a backup program that monitors the R.E.P.O save directory for ch
 ## Installation
 
 1. **install the program:**
-   By design the exe will be added to where repo saves by DEFAULT, which you can find here:
-   AppData\LocalLow\semiwork\Repo\saves
+   You can run the program from anywhere on the computer
 
 ## Usage
 
