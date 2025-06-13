@@ -3,17 +3,228 @@ import shutil
 import time
 import threading
 import hashlib
-from tkinter import Tk, Button, Label, Text, Scrollbar, filedialog, END, Toplevel
+from tkinter import Tk, Button, Label, Text, Scrollbar, filedialog, END, Toplevel, StringVar, ttk
 import tkinter.messagebox as messagebox
 
 # Source and destination directories
 SOURCE_DIR = os.path.join(os.getenv("USERPROFILE"), "AppData", "LocalLow", "semiwork", "Repo", "saves")
 LOG_FILE = "backup_log.txt"
+log_window = None
+
 
 # Global variable to control the monitoring loop
 monitoring = False
 monitoring_thread = None
 DEST_DIR = None
+
+# Localization dictionary
+LOCALIZATION = {
+    "en": {
+        "language": "English",
+        "title": "Backup Program",
+        "main_label": "R.E.P.O Backup Program",
+        "start_monitoring": "Start Monitoring",
+        "stop_monitoring": "Stop Monitoring",
+        "restore_backup": "Restore Backup",
+        "view_logs": "View Logs",
+        "monitor_running": "REPO Monitor is running",
+        "monitor_not_running": "REPO Monitor is not running",
+        "restore_complete": "The backup has been successfully restored.",
+        "error_no_dest": "No destination directory selected. Please start monitoring first to select a directory.",
+        "display_language": "Languages",
+        "log_file_not_found": "Log file not found.",
+        "error": "Error",
+        "error_dest_not_exist": "Destination directory does not exist.",
+        "warning": "Warning",
+        "backup_older_overwrite_confirm": "The backup folder '{folder_name}' is older than the source folder. Do you want to overwrite the source folder with the backup?",
+        "permission_denied": "Permission Denied",
+        "access_denied": "Access denied to {src_path}. Please relaunch the program as an administrator and try again.",
+        "restore_complete": "The backup has been successfully restored."
+        # ...add more keys as needed...
+    },
+    "ua": {
+        "language": "українська",
+        "title": "Програма резервного копіювання",
+        "main_label": "Програма резервного копіювання R.E.P.O",
+        "start_monitoring": "Почати моніторинг",
+        "stop_monitoring": "Зупинити моніторинг",
+        "restore_backup": "Відновити резервну копію",
+        "view_logs": "Переглянути журнали",
+        "monitor_running": "Монітор REPO працює",
+        "monitor_not_running": "Монітор REPO не працює",
+        "restore_complete": "Резервну копію успішно відновлено.",
+        "error_no_dest": "Не вибрано каталог призначення. Спочатку запустіть моніторинг, щоб вибрати каталог.",
+        "display_language": "Мови",
+        "log_file_not_found": "Файл журналу не знайдено.",
+        "error": "Помилка",
+        "error_dest_not_exist": "Каталог призначення не існує.",
+        "warning": "Попередження",
+        "backup_older_overwrite_confirm": "Резервна копія '{folder_name}' старіша за вихідну папку. Ви хочете перезаписати вихідну папку резервною копією?",
+        "permission_denied": "Доступ заборонено",
+        "access_denied": "Доступ заборонено до {src_path}. Будь ласка, перезапустіть програму з правами адміністратора та спробуйте ще раз.",
+        "restore_complete": "Резервну копію успішно відновлено."
+        # ...add more keys as needed...
+    },
+    "es": {
+        "language": "Español",
+        "title": "Programa de Copias de Seguridad",
+        "main_label": "Programa de Copias de Seguridad R.E.P.O",
+        "start_monitoring": "Iniciar Monitoreo",
+        "stop_monitoring": "Detener Monitoreo",
+        "restore_backup": "Restaurar Copia",
+        "view_logs": "Ver Registros",
+        "monitor_running": "El monitor REPO está en ejecución",
+        "monitor_not_running": "El monitor REPO no está en ejecución",
+        "restore_complete": "La copia de seguridad se ha restaurado correctamente.",
+        "error_no_dest": "No se ha seleccionado un directorio de destino. Inicie el monitoreo primero para seleccionar un directorio.",
+        "display_language": "Idiomas",
+        "log_file_not_found": "Archivo de registro no encontrado.",
+        "error": "Error",
+        "error_dest_not_exist": "El directorio de destino no existe.",
+        "warning": "Advertencia",
+        "backup_older_overwrite_confirm": "La carpeta de respaldo '{folder_name}' es más antigua que la carpeta de origen. ¿Desea sobrescribir la carpeta de origen con la copia de seguridad?",
+        "permission_denied": "Permiso Denegado",
+        "access_denied": "Acceso denegado a {src_path}. Por favor, reinicie el programa como administrador e inténtelo de nuevo.",
+        "restore_complete": "La copia de seguridad se ha restaurado correctamente."
+        # ...add more keys as needed...
+    },
+        "de": {
+        "language": "Deutsch",
+        "title": "Backup-Programm",
+        "main_label": "Backup-Programm R.E.P.O",
+        "start_monitoring": "Überwachung starten",
+        "stop_monitoring": "Überwachung stoppen",
+        "restore_backup": "Backup wiederherstellen",
+        "view_logs": "Protokolle anzeigen",
+        "monitor_running": "REPO-Überwachung läuft",
+        "monitor_not_running": "REPO-Überwachung läuft nicht",
+        "restore_complete": "Das Backup wurde erfolgreich wiederhergestellt.",
+        "error_no_dest": "Kein Zielverzeichnis ausgewählt. Bitte starten Sie zuerst die Überwachung, um ein Verzeichnis auszuwählen.",
+        "display_language": "Sprachen",
+        "log_file_not_found": "Protokolldatei nicht gefunden.",
+        "error": "Fehler",
+        "error_dest_not_exist": "Das Zielverzeichnis existiert nicht.",
+        "warning": "Warnung",
+        "backup_older_overwrite_confirm": "Das Backup-Ordner '{folder_name}' ist älter als der Quellordner. Möchten Sie den Quellordner mit dem Backup überschreiben?",
+        "permission_denied": "Zugriff verweigert",
+        "access_denied": "Zugriff verweigert auf {src_path}. Bitte starten Sie das Programm als Administrator neu und versuchen Sie es erneut.",
+        "restore_complete": "Das Backup wurde erfolgreich wiederhergestellt."
+        # ...add more keys as needed...
+    },
+    "fr": {
+        "language":"Francese",
+        "title": "Programme de Sauvegarde",
+        "main_label": "Programme de Sauvegarde R.E.P.O",
+        "start_monitoring": "Démarrer la Surveillance",
+        "stop_monitoring": "Arrêter la Surveillance",
+        "restore_backup": "Restaurer la Sauvegarde",
+        "view_logs": "Voir les Journaux",
+        "monitor_running": "Le moniteur REPO est en cours d'exécution",
+        "monitor_not_running": "Le moniteur REPO n'est pas en cours d'exécution",
+        "restore_complete": "La sauvegarde a été restaurée avec succès.",
+        "error_no_dest": "Aucun dossier de destination sélectionné. Veuillez d'abord démarrer la surveillance pour sélectionner un dossier.",
+        "display_language": "Langues",
+        "log_file_not_found": "Fichier journal non trouvé.",
+        "error": "Erreur",
+        "error_dest_not_exist": "Le répertoire de destination n'existe pas.",
+        "warning": "Avertissement",
+        "backup_older_overwrite_confirm": "Le dossier de sauvegarde '{folder_name}' est plus ancien que le dossier source. Voulez-vous écraser le dossier source avec la sauvegarde?",
+        "permission_denied": "Permission refusée",
+        "access_denied": "Accès refusé à {src_path}. Veuillez relancer le programme en tant qu'administrateur et réessayer.",
+        "restore_complete": "La sauvegarde a été restaurée avec succès."
+        # ...add more keys as needed...
+    },
+        "it": {
+        "language":"Italiano",
+        "title": "Programma di Copie di Sicurezza",
+        "main_label": "Programma di Copie di Sicurezza R.E.P.O",
+        "start_monitoring": "Inizia Monitoraggio",
+        "stop_monitoring": "Ferma Monitoraggio",
+        "restore_backup": "Ripristina Copia",
+        "view_logs": "Visualizza Registri",
+        "monitor_running": "Il monitor REPO è in esecuzione",
+        "monitor_not_running": "Il monitor REPO non è in esecuzione",
+        "restore_complete": "La copia di sicurezza è stata ripristinata correttamente.",
+        "error_no_dest": "Nessuna cartella di destinazione selezionata. Inizia il monitoraggio prima di selezionare una cartella.",
+        "display_language": "Lingue",
+        "log_file_not_found": "File di registro non trovato.",
+        "error": "Errore",
+        "error_dest_not_exist": "La cartella di destinazione non esiste.",
+        "warning": "Avvertenza",
+        "backup_older_overwrite_confirm": "La cartella di backup '{folder_name}' è più vecchia della cartella di origine. Vuoi sovrascrivere la cartella di origine con il backup?",
+        "permission_denied": "Accesso negato",
+        "access_denied": "Accesso negato a {src_path}. Si prega di riavviare il programma come amministratore e riprovare.",
+        "restore_complete": "La copia di sicurezza è stata ripristinata correttamente."
+        # ...add more keys as needed...
+    },
+        "zh": {
+        "language": "官话",
+        "title": "备份程序",
+        "main_label": "备份程序 R.E.P.O",
+        "start_monitoring": "开始监控",
+        "stop_monitoring": "停止监控",
+        "restore_backup": "恢复备份",
+        "view_logs": "查看日志",
+        "monitor_running": "REPO 监控正在运行",
+        "monitor_not_running": "REPO 监控未运行",
+        "restore_complete": "备份已成功恢复。",
+        "error_no_dest": "未选择目标目录。请先启动监控以选择目录。",
+        "display_language": "语言",
+        "log_file_not_found": "未找到日志文件。",
+        "error": "错误",
+        "error_dest_not_exist": "目标目录不存在。",
+        "warning": "警告",
+        "backup_older_overwrite_confirm": "备份文件夹 '{folder_name}' 比源文件夹旧。您想用备份覆盖源文件夹吗？",
+        "permission_denied": "访问被拒绝",
+        "access_denied": "访问被拒绝到 {src_path}。请重新以管理员身份启动程序并重试。",
+        "restore_complete": "备份已成功恢复。"
+        # ...add more keys as needed...
+    }
+}
+
+# Set the current language
+CURRENT_LANG = "en"
+
+def select_language(refresh_callback=None):
+    """Prompt the user to select a language from a dropdown at startup."""
+    global CURRENT_LANG
+
+    root = Tk()
+    root.withdraw()
+
+    lang_win = Toplevel()
+    lang_win.title("Select Language")
+    lang_win.geometry("300x120")
+    lang_win.resizable(False, False)
+
+    Label(lang_win, text="Select your language:", font=("Arial", 12)).pack(pady=10)
+
+    languages = list(LOCALIZATION.keys())
+    lang_display = [f"{code} - {LOCALIZATION[code]['language']}" for code in languages]
+
+    selected_lang = StringVar(value=lang_display[0])
+
+    combo = ttk.Combobox(lang_win, values=lang_display, state="readonly", textvariable=selected_lang, width=28)
+    combo.pack(pady=5)
+
+    def confirm():
+        global CURRENT_LANG
+        idx = lang_display.index(combo.get())
+        CURRENT_LANG = languages[idx]
+        lang_win.destroy()
+        root.destroy()
+        if refresh_callback:
+            refresh_callback()
+
+    Button(lang_win, text="OK", command=confirm, width=10).pack(pady=10)
+
+    lang_win.grab_set()
+    lang_win.mainloop()
+
+def t(key):
+    """Translate a key using the current language."""
+    return LOCALIZATION.get(CURRENT_LANG, LOCALIZATION["en"]).get(key, key)
+
 
 def log_event(message):
     """Log events to a file and print to console. Keeps only the last 100 lines."""
@@ -39,13 +250,13 @@ def is_folder_empty(folder_path):
 
 def calculate_file_hash(file_path):
     """Calculate the SHA256 hash of a file."""
-    log_event(f"Calculating hash for file: {file_path}")
+    # log_event(f"Calculating hash for file: {file_path}")
     hash_sha256 = hashlib.sha256()
     try:
         with open(file_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_sha256.update(chunk)
-        log_event(f"Hash calculated for file: {file_path}")
+        # log_event(f"Hash calculated for file: {file_path}")
     except Exception as e:
         log_event(f"Error calculating hash for file: {file_path}. Exception: {e}")
     return hash_sha256.hexdigest()
@@ -185,48 +396,65 @@ def stop_monitoring():
             monitoring_thread.join(timeout=1) 
 
 def show_logs():
-    """Display the log file in a new window."""
+    """Display the log file in a new window, with error handling for missing DEST_DIR."""
+    global log_window
+
     if not DEST_DIR:
         messagebox.showerror(
-            "Error",
-            "No destination directory selected. Please start monitoring first to select a directory."
+            t("view_logs"),
+            t("error_no_dest") if "error_no_dest" in LOCALIZATION[CURRENT_LANG] else "No destination directory selected. Please start monitoring first to select a directory."
         )
         return
 
     log_path = os.path.join(DEST_DIR, LOG_FILE)
+
+    # Only one log window at a time
+    if 'log_window' in globals() and log_window is not None and log_window.winfo_exists():
+        for widget in log_window.winfo_children():
+            widget.destroy()
+        display_log_content(log_window, log_path)
+        log_window.deiconify()
+        log_window.lift()
+        log_window.focus_force()
+        return
+
     log_window = Toplevel()
-    log_window.title("Backup Logs")
+    log_window.title(t("view_logs"))
+    log_window.geometry("600x400")
+    display_log_content(log_window, log_path)
 
-    scrollbar = Scrollbar(log_window)
+def display_log_content(window, log_path):
+    """Helper to display log content in the given window."""
+    Label(window, text=t("view_logs"), font=("Arial", 14)).pack(pady=5)
+    scrollbar = Scrollbar(window)
     scrollbar.pack(side="right", fill="y")
-
-    text = Text(log_window, wrap="word", yscrollcommand=scrollbar.set)
-    text.pack(expand=True, fill="both")
-
-    scrollbar.config(command=text.yview)
-
+    text_area = Text(window, wrap="word", yscrollcommand=scrollbar.set)
+    text_area.pack(expand=True, fill="both", padx=10, pady=10)
+    scrollbar.config(command=text_area.yview)
     if os.path.exists(log_path):
-        with open(log_path, "r") as log:
-            text.insert(END, log.read())
-        text.see(END)
+        with open(log_path, "r", encoding="utf-8") as log:
+            text_area.insert(END, log.read())
+        text_area.see(END)
     else:
-        text.insert(END, "No logs available.")
+        msg = t("log_file_not_found") if "log_file_not_found" in LOCALIZATION[CURRENT_LANG] else "No logs available."
+        text_area.insert(END, msg)
+    text_area.config(state="disabled")
 
 def update_status_label(status_label):
     """Update the status label based on the monitoring state."""
     if monitoring:
-        status_label.config(text="REPO Monitor is running", fg="green")
+        status_label.config(text=t("monitor_running"), fg="green")
     else:
-        status_label.config(text="REPO Monitor is not running", fg="red")
+        status_label.config(text=t("monitor_not_running"), fg="red")
 
 def restore_backup():
     """Restore the backup from the destination directory to the source directory, without deleting anything in the source."""
     if not DEST_DIR:
-        messagebox.showerror("Error", "No destination directory selected. Cannot restore backup.")
+        messagebox.showerror(t("error"), t("error_no_dest"))
         return
 
     if not os.path.exists(DEST_DIR):
-        messagebox.showerror("Error", "The destination directory does not exist.")
+        messagebox.showerror(t("error"), t("error_dest_not_exist"))
         return
 
     if not os.path.exists(SOURCE_DIR):
@@ -252,9 +480,8 @@ def restore_backup():
 
             if warn_user:
                 response = messagebox.askyesno(
-                    "Warning",
-                    f"The backup folder '{folder_name}' is older than the source folder. "
-                    "Do you want to overwrite the source folder with the backup?"
+                    t("warning"),
+                    t("backup_older_overwrite_confirm").format(folder_name=folder_name)
                 )
                 if not response:
                     continue  # Skip restoring this folder
@@ -272,41 +499,86 @@ def restore_backup():
                 log_event(f"Restored (merged/overwritten) folder: {folder_name}")
             except PermissionError as e:
                 messagebox.showerror(
-                    "Permission Denied",
-                    f"Access denied while trying to modify '{src_path}'.\n"
-                    f"Error: {e}\n"
-                    "Please relaunch the program as an administrator and try again."
+                    t("permission_denied"),
+                    t("access_denied").format(src_path=src_path)
                 )
                 log_event(f"PermissionError while restoring '{src_path}': {e}")
                 return  # Exit the function if a permission error occurs
         else:
             log_event(f"Skipped non-folder item in backup: {folder_name}")
 
-    messagebox.showinfo("Restore Complete", "The backup has been successfully restored.")
+    messagebox.showinfo(t("restore_complete"))
 
 def create_gui():
-    """Create the GUI for the program."""
     root = Tk()
-    root.title("Backup Program")
+    root.title(t("title"))
 
-    Label(root, text="R.E.P.O Backup Program", font=("Arial", 16)).pack(pady=10)
+    # Store widgets for refreshing
+    widgets = {}
 
-    # Status label to show monitoring state
-    status_label = Label(root, text="REPO Monitor is not running", font=("Arial", 12), fg="red")
-    status_label.pack(pady=5)
+    widgets['main_label'] = Label(root, text=t("main_label"), font=("Arial", 16))
+    widgets['main_label'].pack(pady=10)
 
-    # Update the status label when monitoring starts or stops
+    widgets['status_label'] = Label(root, text=t("monitor_not_running"), font=("Arial", 12), fg="red")
+    widgets['status_label'].pack(pady=5)
+
     def stop_monitoring_with_status():
         stop_monitoring()
-        update_status_label(status_label)
+        update_status_label(widgets['status_label'])
 
-    # Use start_monitoring_with_directory to prompt for a directory
-    Button(root, text="Start Monitoring", command=lambda: start_monitoring_with_directory(status_label), width=20).pack(pady=5)
-    Button(root, text="Stop Monitoring", command=stop_monitoring_with_status, width=20).pack(pady=5)
-    Button(root, text="Restore Backup", command=restore_backup, width=20).pack(pady=5)  # Add Restore button
-    Button(root, text="View Logs", command=show_logs, width=20).pack(pady=5)
+    widgets['start_btn'] = Button(
+        root,
+        text=t("start_monitoring"),
+        command=lambda: start_monitoring_with_directory(widgets['status_label']),
+        width=20
+    )
+    widgets['start_btn'].pack(pady=5)
+
+    widgets['stop_btn'] = Button(
+        root,
+        text=t("stop_monitoring"),
+        command=stop_monitoring_with_status,
+        width=20
+    )
+    widgets['stop_btn'].pack(pady=5)
+
+    widgets['restore_btn'] = Button(
+        root,
+        text=t("restore_backup"),
+        command=restore_backup,
+        width=20
+    )
+    widgets['restore_btn'].pack(pady=5)
+
+    widgets['logs_btn'] = Button(
+        root,
+        text=t("view_logs"),
+        command=show_logs,
+        width=20
+    )
+    widgets['logs_btn'].pack(pady=5)
+
+    def refresh_gui():
+        root.title(t("title"))
+        widgets['main_label'].config(text=t("main_label"))
+        # Optionally update status label text based on monitoring state
+        update_status_label(widgets['status_label'])
+        widgets['start_btn'].config(text=t("start_monitoring"))
+        widgets['stop_btn'].config(text=t("stop_monitoring"))
+        widgets['restore_btn'].config(text=t("restore_backup"))
+        widgets['logs_btn'].config(text=t("view_logs"))
+        widgets['lang_btn'].config(text=t("display_language"))
+
+    widgets['lang_btn'] = Button(
+        root,
+        text=t("display_language"),
+        command=lambda: select_language(refresh_gui),
+        width=20
+    )
+    widgets['lang_btn'].pack(pady=5)
 
     root.mainloop()
 
 if __name__ == "__main__":
+    select_language()
     create_gui()
